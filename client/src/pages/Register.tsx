@@ -39,10 +39,9 @@ export default function Register() {
 
     try {
       setIsLoading(true);
-      const r = await api.post("/api/auth/register", { name, email, password });
-      localStorage.setItem("token", r.data.token);
+      await api.post("/api/auth/register", { name, email, password });
       toast.success("Регистрация прошла успешно");
-      nav("/");
+      nav("/login");
     } catch (e: any) {
       toast.error(e?.response?.data?.error || "Ошибка регистрации");
     } finally {
