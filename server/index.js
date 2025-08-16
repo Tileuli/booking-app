@@ -12,16 +12,8 @@ app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json());
 
 const requireAuth = require('./middleware/requireAuth');
-const requireRole = require('./middleware/requireRole');
 const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/user');
-const adminRoutes = require('./routes/admin');
-
 app.use('/api/auth', authRoutes);
-
-app.use('/api/me', requireAuth, userRoutes);
-
-app.use('/api/admin', requireAuth, requireRole('ADMIN'), adminRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

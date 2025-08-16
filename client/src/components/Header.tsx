@@ -53,7 +53,7 @@ export default function Header() {
               onClick={logout}
               className="ml-2 px-4 py-2.5 rounded-xl text-sm font-semibold 
                 bg-white border border-slate-200 text-slate-700 
-                hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm
+                hover:bg-slate-100 hover:border-slate-300 hover:shadow-lg
                 transition-all duration-200"
             >
               Выйти
