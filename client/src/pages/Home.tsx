@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { toast } from "sonner";
-import { Calendar, MapPin, User, Clock, CheckCircle, Building2, Users, ArrowRight } from "lucide-react";
+import { Calendar, User, Clock, CheckCircle, Building2, ArrowRight, Search } from "lucide-react";
 
 type Organization = { id: number; name: string; category: string; address: string; };
 type Specialist   = { id: number; name: string; specialization: string; organizationId: number; };
@@ -13,6 +13,7 @@ function minutesToHHMM(m: number) {
   const min = (m % 60).toString().padStart(2, "0");
   return `${h}:${min}`;
 }
+
 function isPastSlot(dateStr: string, m: number) {
   const d = new Date(dateStr + "T00:00:00");
   d.setMinutes(d.getMinutes() + m);
@@ -25,11 +26,12 @@ export default function Home() {
   const [specs, setSpecs] = useState<Specialist[]>([]);
   const [selectedSpec, setSelectedSpec] = useState<Specialist | null>(null);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [slotsDate, setSlotsDate] = useState<string>(""); // Track the date for which slots were loaded
+  const [slotsDate, setSlotsDate] = useState<string>("");
   const [slots, setSlots] = useState<number[]>([]);
   const [isLoadingSpecs, setIsLoadingSpecs] = useState(false);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [isBooking, setIsBooking] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
   const token = localStorage.getItem("token");
 
   useEffect(() => {
@@ -38,10 +40,25 @@ export default function Home() {
       .catch(() => toast.error("Не удалось загрузить организации"));
   }, []);
 
+  const filteredOrgs = useMemo(() => {
+    if (!searchTerm) return orgs;
+    return orgs.filter(org => 
+      org.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      org.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      org.address.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [orgs, searchTerm]);
+
   const loadSpecs = async (org: Organization) => {
     try {
       setIsLoadingSpecs(true);
-      setSelectedOrg(org); setSpecs([]); setSelectedSpec(null); setSlots([]); setSlotsDate("");
+      setSelectedOrg(org); 
+      setSpecs([]); 
+      setSelectedSpec(null); 
+      setSlots([]); 
+      setSlotsDate("");
+      setSearchTerm("");
+      
       const r = await api.get<Specialist[]>(`/api/organizations/${org.id}/specialists`);
       setSpecs(r.data);
     } catch {
@@ -51,12 +68,13 @@ export default function Home() {
     }
   };
 
-  const loadSlots = async (spec: Specialist) => {
+  const loadSlots = async (spec: Specialist, selectedDate?: string) => {
+    const dateToUse = selectedDate || date;
     try {
       setIsLoadingSlots(true);
       setSelectedSpec(spec);
-      setSlotsDate(date); // Store the date for which we're loading slots
-      const r = await api.get<SlotsResponse>(`/api/specialists/${spec.id}/slots`, { params: { date } });
+      setSlotsDate(dateToUse);
+      const r = await api.get<SlotsResponse>(`/api/specialists/${spec.id}/slots`, { params: { date: dateToUse } });
       setSlots(r.data?.slots ?? []);
       if ((r.data?.slots ?? []).length === 0) toast.info("На выбранную дату слотов нет");
     } catch {
@@ -71,7 +89,6 @@ export default function Home() {
     if (!selectedSpec) return;
     try {
       setIsBooking(minutesFromMidnight);
-      // Use slotsDate instead of current date for booking
       await api.post("/api/appointments", { specialistId: selectedSpec.id, date: slotsDate, minutesFromMidnight });
       toast.success("Запись успешно создана");
       loadSlots(selectedSpec);
@@ -87,363 +104,295 @@ export default function Home() {
 
   const dateLabel = useMemo(() => {
     if (!slotsDate) return "";
-    try { return new Date(slotsDate + "T00:00:00").toLocaleDateString(); }
+    try { 
+      const options: Intl.DateTimeFormatOptions = { 
+        day: 'numeric', 
+        month: 'long',
+        weekday: 'short'
+      };
+      return new Date(slotsDate + "T00:00:00").toLocaleDateString('ru-RU', options);
+    }
     catch { return slotsDate; }
   }, [slotsDate]);
 
-  return (
-    <div className="min-h-screen relative">
-      {/* Animated Background Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 -left-4 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-1/4 -right-4 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
-      </div>
+  const resetBooking = () => {
+    setSelectedOrg(null);
+    setSelectedSpec(null);
+    setSpecs([]);
+    setSlots([]);
+    setSlotsDate("");
+    setSearchTerm("");
+  };
 
-      <div className="relative max-w-7xl mx-auto px-4 py-12 space-y-20">
-        {/* Hero Section */}
-        <div className="text-center space-y-8">
-          <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-blue-600 to-purple-700 rounded-3xl shadow-2xl shadow-blue-500/30 mb-8 pulse-glow">
-            <Calendar className="w-12 h-12 text-white" />
+  const handleDateChange = (newDate: string) => {
+    setDate(newDate);
+    if (selectedSpec) {
+      loadSlots(selectedSpec, newDate);
+    }
+  };
+
+  const currentStep = selectedOrg ? (selectedSpec ? 3 : 2) : 1;
+
+  return (
+    <div className="min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 py-6">
+        {/* Compact Hero Section */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center space-x-6 px-6 py-3 mb-6">
+            <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
+              <Calendar className="w-10 h-10 text-white" />
+            </div>
+            <div>
+              <span className="font-bold text-5xl text-blue-600">JAZYL</span>
+              <p className="text-md text-gray-600">Онлайн запись</p>
+            </div>
           </div>
           
-          <div className="space-y-4">
-            <h1 className="text-6xl md:text-7xl font-black text-gradient leading-loose pb-4">
-              Booking Platform
-            </h1>
-            <p className="text-xl md:text-2xl text-slate-600 max-w-3xl mx-auto leading-relaxed">
-              Найдите и запишитесь к нужному специалисту в удобное время
-            </p>
-          </div>
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">
+            Запишитесь в пару кликов
+          </h2>
+          <p className="text-gray-600 text-sm mb-8 max-w-sm mx-auto">
+            Выберите услугу, мастера и удобное время
+          </p>
           
-          {/* Enhanced Progress Steps */}
-          <div className="flex flex-col md:flex-row items-center justify-center gap-6 mt-12">
-            <div className="flex items-center space-x-4 glass-card px-8 py-4 rounded-2xl hover-lift">
-              <div className={`flex items-center justify-center w-12 h-12 rounded-xl font-bold text-lg transition-all duration-300 ${
-                selectedOrg ? 'bg-green-500 text-white shadow-lg shadow-green-500/30' : 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-              }`}>
-                1
-              </div>
-              <div className="text-left">
-                <div className="font-bold text-slate-800">Организация</div>
-                <div className="text-sm text-slate-500">Выберите место</div>
-              </div>
-              {selectedOrg && <CheckCircle className="w-5 h-5 text-green-500" />}
-            </div>
-            
-            <ArrowRight className="w-6 h-6 text-slate-400 rotate-90 md:rotate-0" />
-            
-            <div className="flex items-center space-x-4 glass-card px-8 py-4 rounded-2xl hover-lift">
-              <div className={`flex items-center justify-center w-12 h-12 rounded-xl font-bold text-lg transition-all duration-300 ${
-                selectedSpec ? 'bg-green-500 text-white shadow-lg shadow-green-500/30' : 
-                selectedOrg ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 
-                'bg-slate-300 text-slate-500'
-              }`}>
-                2
-              </div>
-              <div className="text-left">
-                <div className="font-bold text-slate-800">Специалист</div>
-                <div className="text-sm text-slate-500">Выберите врача</div>
-              </div>
-              {selectedSpec && <CheckCircle className="w-5 h-5 text-green-500" />}
-            </div>
-            
-            <ArrowRight className="w-6 h-6 text-slate-400 rotate-90 md:rotate-0" />
-            
-            <div className="flex items-center space-x-4 glass-card px-8 py-4 rounded-2xl hover-lift">
-              <div className={`flex items-center justify-center w-12 h-12 rounded-xl font-bold text-lg transition-all duration-300 ${
-                slots.length > 0 ? 'bg-green-500 text-white shadow-lg shadow-green-500/30' : 
-                selectedSpec ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 
-                'bg-slate-300 text-slate-500'
-              }`}>
-                3
-              </div>
-              <div className="text-left">
-                <div className="font-bold text-slate-800">Время</div>
-                <div className="text-sm text-slate-500">Выберите слот</div>
-              </div>
-              {slots.length > 0 && <CheckCircle className="w-5 h-5 text-green-500" />}
+          {/* Compact Progress Steps */}
+          <div className="flex justify-center mb-6">
+            <div className="flex items-center p-3">
+              {[1, 2, 3].map((step) => (
+                <div key={step} className="flex items-center">
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-xl text-sm font-bold transition-all duration-300 ${
+                    currentStep > step 
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-md scale-105' 
+                      : currentStep === step
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105'
+                      : 'bg-gray-300 text-gray-600'
+                  }`}>
+                    {currentStep > step ? <CheckCircle className="w-5 h-5" /> : step}
+                  </div>
+                  {step < 3 && (
+                    <div className={`w-8 h-0.5 mx-3 rounded-full transition-all duration-300 ${
+                      currentStep > step ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gray-400'
+                    }`} />
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Organizations Section */}
-        <section className="space-y-12">
-          <div className="text-center space-y-4">
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-900">
-              Выберите организацию
-            </h2>
-            <p className="text-xl text-slate-600">
-              Найдите медицинское учреждение в вашем городе
-            </p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {orgs.map(o => (
-              <button
-                key={o.id}
-                onClick={() => loadSpecs(o)}
-                className={`group relative text-left p-8 rounded-3xl transition-all duration-500 hover-lift ${
-                  selectedOrg?.id === o.id
-                    ? "glass-card ring-2 ring-blue-500 shadow-2xl shadow-blue-500/20 scale-105"
-                    : "glass-card hover:shadow-2xl hover:shadow-slate-900/10"
-                }`}
-              >
-                {/* Background Glow */}
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                
-                {/* Content */}
-                <div className="relative space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
-                        <Building2 className="w-7 h-7 text-white" />
-                      </div>
-                      {selectedOrg?.id === o.id && (
-                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                          <CheckCircle className="w-5 h-5 text-green-600" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <h3 className="text-xl font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                      {o.name}
-                    </h3>
-                    
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></div>
-                      <span className="text-sm font-semibold text-gradient">{o.category}</span>
-                    </div>
-                    
-                    <div className="flex items-center space-x-3 text-slate-600">
-                      <MapPin className="w-4 h-4" />
-                      <span className="text-sm">{o.address}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between pt-4">
-                    <div className="flex items-center space-x-2 text-slate-500">
-                      <Users className="w-4 h-4" />
-                      <span className="text-sm">Доступны специалисты</span>
-                    </div>
-                    <ArrowRight className={`w-5 h-5 transition-transform duration-300 ${
-                      selectedOrg?.id === o.id ? 'text-blue-600 rotate-45' : 'text-slate-400 group-hover:translate-x-1'
-                    }`} />
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Specialists Section */}
-        {selectedOrg && (
-          <section className="space-y-12">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-6 lg:space-y-0">
-              <div className="space-y-2">
-                <h2 className="text-4xl font-bold text-slate-900">Специалисты</h2>
-                <p className="text-xl text-slate-600">
-                  <span className="text-gradient font-bold">{selectedOrg.name}</span> • Выберите специалиста
-                </p>
-              </div>
-              
-              {/* Date Picker */}
-              <div className="glass-card rounded-2xl p-6 space-y-3">
-                <div className="flex items-center space-x-3">
-                  <Calendar className="w-5 h-5 text-blue-600" />
-                  <span className="font-semibold text-slate-700">Дата записи</span>
-                </div>
-                <input
-                  className="w-full px-4 py-3 bg-white border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 focus:outline-none transition-all duration-200 font-semibold"
-                  type="date"
-                  value={date}
-                  onChange={e => setDate(e.target.value)}
-                />
+        <div className="space-y-4">
+          {/* Organization Selection */}
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b">
+              <div className="flex items-center space-x-2">
+                <Building2 className="w-4 h-4 text-blue-600" />
+                <span className="font-semibold text-gray-900">1. Организация</span>
               </div>
             </div>
 
-            {isLoadingSpecs ? (
-              <div className="glass-card rounded-3xl p-16">
-                <div className="flex flex-col items-center space-y-4">
-                  <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-                  <span className="text-lg font-medium text-slate-600">Загружаем специалистов...</span>
-                </div>
-              </div>
-            ) : specs.length > 0 ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {specs.map(s => (
-                  <div
-                    key={s.id}
-                    className={`group p-8 rounded-3xl transition-all duration-500 ${
-                      selectedSpec?.id === s.id
-                        ? "glass-card ring-2 ring-green-500 shadow-2xl shadow-green-500/20 scale-105"
-                        : "glass-card hover:shadow-2xl hover:-translate-y-2"
-                    }`}
+            <div className="p-4">
+              {selectedOrg ? (
+                <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                      <Building2 className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900">{selectedOrg.name}</div>
+                      <div className="text-sm text-blue-600">{selectedOrg.category}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{selectedOrg.address}</div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={resetBooking}
+                    className="text-blue-600 hover:text-blue-800 font-medium px-3 py-1.5 rounded-md hover:bg-blue-100 transition-all duration-200 text-sm"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-16 h-16 bg-gradient-to-br from-green-400 to-green-600 rounded-2xl flex items-center justify-center shadow-lg">
-                          <User className="w-8 h-8 text-white" />
-                        </div>
-                        <div className="space-y-1">
-                          <h3 className="text-xl font-bold text-slate-900 group-hover:text-green-600 transition-colors">
-                            {s.name}
-                          </h3>
-                          <p className="text-green-600 font-semibold">{s.specialization}</p>
-                        </div>
-                      </div>
-                      
-                      <button
-                        className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg shadow-blue-500/30 font-semibold hover-lift"
-                        onClick={() => loadSlots(s)}
-                        disabled={isLoadingSlots && selectedSpec?.id === s.id}
-                      >
-                        {isLoadingSlots && selectedSpec?.id === s.id ? (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                            <span>Загрузка...</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-2">
-                            <Clock className="w-4 h-4" />
-                            <span>Показать время</span>
-                          </div>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="glass-card rounded-3xl p-16">
-                <div className="text-center space-y-8">
-                  <div className="relative mx-auto w-32 h-32">
-                    <div className="absolute inset-0 bg-gradient-to-br from-slate-100 to-slate-200 rounded-3xl flex items-center justify-center">
-                      <User className="w-16 h-16 text-slate-400" />
-                    </div>
-                    <div className="absolute -top-2 -right-2 w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                      <span className="text-orange-600 font-bold text-xl">!</span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <h3 className="text-2xl font-bold text-slate-700">
-                      В данной организации нет доступных специалистов
-                    </h3>
-                    <p className="text-lg text-slate-500 max-w-md mx-auto leading-relaxed">
-                      Попробуйте выбрать другую организацию или обратитесь позже
-                    </p>
-                  </div>
-                  
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-                    <button
-                      onClick={() => {setSelectedOrg(null); setSpecs([]); setSelectedSpec(null); setSlots([]); setSlotsDate("");}}
-                      className="group px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-2xl transition-all duration-300 shadow-lg shadow-blue-500/25 hover:shadow-xl hover:-translate-y-1 font-semibold"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <ArrowRight className="w-5 h-5 rotate-180 group-hover:-translate-x-1 transition-transform" />
-                        <span>Выбрать другую организацию</span>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={() => loadSpecs(selectedOrg!)}
-                      className="group px-6 py-4 bg-slate-100 hover:bg-slate-200 border border-slate-300 hover:border-slate-400 text-slate-700 hover:text-slate-800 rounded-2xl transition-all duration-300 font-semibold"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <svg className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        <span>Обновить</span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Time Slots Section */}
-        {selectedSpec && slotsDate && (
-          <section className="space-y-12">
-            <div className="text-center space-y-4">
-              <h2 className="text-4xl font-bold text-slate-900">Доступное время</h2>
-              <p className="text-xl text-slate-600">
-                <span className="text-gradient font-bold">{selectedSpec.name}</span> • {dateLabel}
-              </p>
-            </div>
-
-            <div className="glass-card rounded-3xl p-8 lg:p-12">
-              {isLoadingSlots ? (
-                <div className="flex flex-col items-center space-y-6 py-16">
-                  <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-                  <span className="text-xl font-medium text-slate-600">Загружаем доступное время...</span>
-                </div>
-              ) : slots.length ? (
-                <div className="space-y-8">
-                  <div className="text-center">
-                    <div className="inline-flex items-center space-x-3 bg-green-50 px-6 py-3 rounded-2xl">
-                      <CheckCircle className="w-6 h-6 text-green-600" />
-                      <span className="text-green-700 font-bold text-lg">
-                        Найдено {slots.length} свободных слотов
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
-                    {slots.map(m => {
-                      const disabled = isPastSlot(slotsDate, m); // Use slotsDate instead of date
-                      const isCurrentlyBooking = isBooking === m;
-                      
-                      return (
-                        <button
-                          key={m}
-                          onClick={() => !disabled && !isCurrentlyBooking && book(m)}
-                          disabled={disabled || isCurrentlyBooking}
-                          className={`relative px-4 py-4 rounded-2xl font-bold text-lg transition-all duration-300 ${
-                            disabled
-                              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : isCurrentlyBooking
-                              ? "bg-blue-100 text-blue-600 cursor-wait animate-pulse"
-                              : "bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 hover:shadow-xl hover:-translate-y-2 hover:scale-110 active:scale-95"
-                          }`}
-                        >
-                          {isCurrentlyBooking ? (
-                            <div className="flex items-center justify-center space-x-2">
-                              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                              <span>...</span>
-                            </div>
-                          ) : (
-                            <div className="space-y-1">
-                              <div className="text-xl">{minutesToHHMM(m)}</div>
-                              {!disabled && (
-                                <div className="text-xs text-slate-500">Доступно</div>
-                              )}
-                            </div>
-                          )}
-                          
-                          {!disabled && !isCurrentlyBooking && (
-                            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                    Изменить
+                  </button>
                 </div>
               ) : (
-                <div className="text-center py-20">
-                  <div className="w-24 h-24 bg-gradient-to-br from-slate-100 to-slate-200 rounded-3xl flex items-center justify-center mx-auto mb-8">
-                    <Clock className="w-12 h-12 text-slate-400" />
+                <div className="space-y-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Найти организацию..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+                    />
                   </div>
-                  <h3 className="text-2xl font-bold text-slate-600 mb-4">Нет доступных слотов</h3>
-                  <p className="text-lg text-slate-500">Попробуйте выбрать другую дату или специалиста</p>
+                  
+                  {filteredOrgs.length > 0 && (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {filteredOrgs.map(org => (
+                        <button
+                          key={org.id}
+                          onClick={() => loadSpecs(org)}
+                          className="w-full text-left p-3 hover:bg-blue-50 rounded-lg transition-all duration-200 group border border-transparent hover:border-blue-200 hover:shadow-sm"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 bg-blue-50 group-hover:bg-blue-100 rounded-lg flex items-center justify-center transition-colors duration-200">
+                                <Building2 className="w-4 h-4 text-blue-600" />
+                              </div>
+                              <div>
+                                <div className="font-medium text-gray-900 group-hover:text-blue-900 transition-colors duration-200">{org.name}</div>
+                                <div className="text-sm text-gray-500">{org.category}</div>
+                                <div className="text-xs text-gray-400 mt-0.5">{org.address}</div>
+                              </div>
+                            </div>
+                            <div className="w-8 h-8 bg-gray-100 group-hover:bg-blue-600 rounded-lg flex items-center justify-center transition-all duration-200">
+                              <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors duration-200" />
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          </section>
-        )}
+          </div>
+
+          {/* Specialist Selection */}
+          {selectedOrg && (
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 border-b">
+                <div className="flex items-center space-x-2">
+                  <User className="w-4 h-4 text-blue-600" />
+                  <span className="font-semibold text-gray-900">2. Специалист</span>
+                </div>
+              </div>
+
+              <div className="p-4">
+                {isLoadingSpecs ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                    <span className="ml-2 text-gray-600 text-sm">Загрузка специалистов...</span>
+                  </div>
+                ) : selectedSpec ? (
+                  <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                        <User className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">{selectedSpec.name}</div>
+                        <div className="text-sm text-blue-600">{selectedSpec.specialization}</div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => {setSelectedSpec(null); setSlots([]); setSlotsDate("");}}
+                      className="text-blue-600 hover:text-blue-800 font-medium px-3 py-1.5 rounded-md hover:bg-blue-100 transition-all duration-200 text-sm"
+                    >
+                      Изменить
+                    </button>
+                  </div>
+                ) : specs.length > 0 ? (
+                  <div className="space-y-2">
+                    {specs.map(spec => (
+                      <button
+                        key={spec.id}
+                        onClick={() => loadSlots(spec)}
+                        className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors group border border-transparent hover:border-gray-200"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
+                            <User className="w-4 h-4 text-green-600" />
+                          </div>
+                          <div className="text-left">
+                            <div className="font-medium text-gray-900">{spec.name}</div>
+                            <div className="text-sm text-gray-500">{spec.specialization}</div>
+                          </div>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <User className="w-8 h-8 mx-auto mb-3 text-gray-300" />
+                    <p className="font-medium">Нет доступных специалистов</p>
+                    <p className="text-sm text-gray-400 mt-1">Выберите другую организацию</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Time Slots */}
+          {selectedSpec && (
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b">
+                <div className="flex items-center space-x-2">
+                  <Clock className="w-4 h-4 text-blue-600" />
+                  <span className="font-semibold text-gray-900">3. Выберите время</span>
+                  {dateLabel && <span className="text-gray-500 text-sm">• {dateLabel}</span>}
+                </div>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={e => handleDateChange(e.target.value)}
+                  className="px-2.5 py-1.5 border border-gray-200 rounded-md focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none text-sm"
+                />
+              </div>
+
+              <div className="p-4">
+                {isLoadingSlots ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                    <span className="ml-2 text-gray-600 text-sm">Загрузка времени...</span>
+                  </div>
+                ) : slots.length > 0 ? (
+                  <div>
+                    <div className="mb-4 text-center">
+                      <span className="inline-flex items-center px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full font-medium text-sm">
+                        <Clock className="w-3 h-3 mr-1.5" />
+                        {slots.length} свободных слотов
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                      {slots.map(m => {
+                        const disabled = isPastSlot(slotsDate, m);
+                        const isCurrentlyBooking = isBooking === m;
+                        
+                        return (
+                          <button
+                            key={m}
+                            onClick={() => !disabled && !isCurrentlyBooking && book(m)}
+                            disabled={disabled || isCurrentlyBooking}
+                            className={`px-2 py-3 rounded-lg font-medium text-sm transition-all duration-200 ${
+                              disabled
+                                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                : isCurrentlyBooking
+                                ? "bg-blue-100 text-blue-600 animate-pulse"
+                                : "bg-gray-50 text-gray-700 hover:bg-blue-600 hover:text-white hover:scale-105 active:scale-95 border border-gray-200 hover:border-blue-600"
+                            }`}
+                          >
+                            {isCurrentlyBooking ? (
+                              <div className="flex items-center justify-center">
+                                <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                              </div>
+                            ) : (
+                              minutesToHHMM(m)
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : slotsDate ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Clock className="w-8 h-8 mx-auto mb-3 text-gray-300" />
+                    <p className="font-medium">Нет свободных слотов</p>
+                    <p className="text-sm text-gray-400 mt-1">Попробуйте выбрать другую дату</p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

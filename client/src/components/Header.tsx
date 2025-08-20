@@ -39,7 +39,7 @@ export default function Header() {
             </svg>
           </div>
           <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">
-            Booking
+            Jazyl.kz
           </span>
         </Link>
 
