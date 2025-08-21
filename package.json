@@ -1,0 +1,17 @@
+{
+  "name": "booking-app",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:client": "npm --workspace apps/client run dev",
+    "dev:server": "npm --workspace apps/server run dev",
+    "build:client": "npm --workspace apps/client run build",
+    "start:server": "npm --workspace apps/server run start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}

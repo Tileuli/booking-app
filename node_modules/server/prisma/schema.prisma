@@ -1,0 +1,77 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           Int        @id @default(autoincrement())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         Role       @default(USER)
+  createdAt    DateTime   @default(now())
+  appointments Appointment[]
+}
+
+model Organization {
+  id           Int           @id @default(autoincrement())
+  name         String
+  category     String
+  address      String
+  timeZone     String
+  specialists  Specialist[]
+}
+
+model Specialist {
+  id              Int           @id @default(autoincrement())
+  name            String
+  specialization  String
+  organizationId  Int
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  appointments    Appointment[]
+  schedules       Schedule[]
+}
+
+model Schedule {
+  id            Int          @id @default(autoincrement())
+  specialistId  Int
+  dayOfWeek     Int          // 0-6 (вс–сб)
+  startTimeMin  Int          // минуты с 00:00, напр. 9:00 => 540
+  endTimeMin    Int          // минуты с 00:00
+  slotSizeMin   Int          @default(30)
+  specialist    Specialist   @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+
+  @@unique([specialistId, dayOfWeek])
+}
+
+model Appointment {
+  id            Int          @id @default(autoincrement())
+  userId        Int
+  specialistId  Int
+  startAt       DateTime
+  durationMin   Int          @default(30)
+  status        AppointmentStatus @default(PENDING)
+  createdAt     DateTime     @default(now())
+
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialist    Specialist   @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+
+  @@index([specialistId, startAt])
+  @@index([userId, startAt])
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum Role {
+  USER
+  ADMIN
+}
